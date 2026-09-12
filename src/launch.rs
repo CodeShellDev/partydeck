@@ -510,7 +510,6 @@ fn print_launch_cmds(prelaunch_cmds: &Vec<Command>, cmds: &Vec<Command>) {
         println!("[partydeck] INSTANCE {}:", i + 1);
 
         let cwd = cmd.get_current_dir().unwrap_or_else(|| Path::new(""));
-        println!("[partydeck] CWD={}", cwd.display());
 
         println!("[partydeck] ---------------------");
 
@@ -518,6 +517,9 @@ fn print_launch_cmds(prelaunch_cmds: &Vec<Command>, cmds: &Vec<Command>) {
             println!("[partydeck] PRE-LAUNCH:");
 
             let prelaunch_cmd = &prelaunch_cmds[i];
+
+            let prelaunch_cwd = prelaunch_cmd.get_current_dir().unwrap_or_else(|| Path::new(""));
+            println!("[partydeck] CWD={}", prelaunch_cwd.display());
 
             for var in prelaunch_cmd.get_envs() {
                 let value = var.1.ok_or_else(|| "").unwrap_or_default();
@@ -534,6 +536,8 @@ fn print_launch_cmds(prelaunch_cmds: &Vec<Command>, cmds: &Vec<Command>) {
         }
 
         println!("[partydeck] LAUNCH:");
+
+        println!("[partydeck] CWD={}", cwd.display());
 
         for var in cmd.get_envs() {
             let value = var.1.ok_or_else(|| "").unwrap_or_default();
