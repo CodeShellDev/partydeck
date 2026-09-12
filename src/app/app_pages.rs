@@ -246,6 +246,11 @@ impl PartyApp {
         
         ui.label(egui::RichText::new("Properties").strong());
          
+        ui.horizontal(|ui| {    
+            ui.label("Prelaunch:");
+            ui.add(egui::TextEdit::multiline(&mut h.prelaunch).desired_rows(1));
+        });
+
         ui.horizontal(|ui| {
             ui.label("Environment variables:");
             ui.add(egui::TextEdit::singleline(&mut h.env));
