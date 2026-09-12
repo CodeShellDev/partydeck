@@ -37,6 +37,7 @@ pub struct Handler {
     pub path_gameroot: String,
     pub runtime: String,
     pub exec: String,
+    pub prelaunch: String,
     pub args: String,
     pub env: String,
     #[serde(default)]
@@ -69,6 +70,7 @@ impl Default for Handler {
 
             runtime: String::new(),
             exec: String::new(),
+            prelaunch: String::new(),
             args: String::new(),
             env: String::new(),
             sdl2_override: SDL2Override::No,
