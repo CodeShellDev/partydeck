@@ -449,7 +449,7 @@ pub fn launch_cmds(
         if prelaunch_exists {
             let prelaunch_cmd = &mut prelaunch_cmds[i];
 
-            prelaunch_cmd.current_dir(cwd);
+            prelaunch_cmd.current_dir(&h.path_handler);
 
             prelaunch_cmd.env("PROFILE", &instance.profname);
             prelaunch_cmd.env("WIDTH", instance.width.to_string());
