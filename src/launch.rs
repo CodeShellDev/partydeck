@@ -51,7 +51,7 @@ pub fn launch_game(
     instances: &Vec<Instance>,
     cfg: &PartyConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut prelaunch_cmds, mut new_cmds) = launch_cmds(h, input_devices, instances, cfg)?;
+    let (prelaunch_cmds, new_cmds) = launch_cmds(h, input_devices, instances, cfg)?;
     print_launch_cmds(&prelaunch_cmds, &new_cmds);
 
     if cfg.enable_kwin_script {
@@ -68,23 +68,32 @@ pub fn launch_game(
         None => 0.5,
     };
 
+    let mut prelaunch_handles = Vec::new();
+
+    let mut i = 0;
+    for mut cmd in prelaunch_cmds {
+        print_cmd_exec(&cmd);
+
+        let handle = cmd.spawn().map_err(|e| {
+            format!("Failed to prelaunch '{}': {}", cmd.get_program().to_string_lossy(), e)
+        })?;
+        prelaunch_handles.push(handle);
+
+        if i < instances.len() - 1 {
+            std::thread::sleep(std::time::Duration::from_secs_f64(sleep_time));
+        }
+        i += 1;
+    }
+
+    for mut handle in prelaunch_handles {
+        handle.wait()?;
+    }
+
     let mut handles = Vec::new();
 
-    for i in 0..new_cmds.len() {
-        let cmd = &mut new_cmds[i];
-
-        if i < prelaunch_cmds.len() {
-            let prelaunch = &mut prelaunch_cmds[i];
-
-            print_cmd_exec(prelaunch);
-
-            let handle = prelaunch.spawn().map_err(|e| {
-                format!("Failed to prelaunch '{}': {}", prelaunch.get_program().to_string_lossy(), e)
-            })?;
-            handles.push(handle);
-        }
-
-        print_cmd_exec(cmd);
+    let mut i = 0;
+    for mut cmd in new_cmds {
+        print_cmd_exec(&cmd);
 
         let handle = cmd.spawn().map_err(|e| {
             format!("Failed to start '{}': {}", cmd.get_program().to_string_lossy(), e)
@@ -94,6 +103,7 @@ pub fn launch_game(
         if i < instances.len() - 1 {
             std::thread::sleep(std::time::Duration::from_secs_f64(sleep_time));
         }
+        i += 1;
     }
 
     for mut handle in handles {
