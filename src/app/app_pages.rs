@@ -32,10 +32,10 @@ impl PartyApp {
             ui.hyperlink_to("♥Ko-fi", "https://ko-fi.com/wunner");
             ui.label("supporters:");
         });
-        ui.label("Framilano, Jayden, Marc, Max Rei");
+        ui.label("chungus, Framilano, Jayden, Marc, Max Rei, Thesaurus");
         ui.horizontal_wrapped(|ui| {
             ui.label("Thank you to");
-            ui.hyperlink_to(" GitHub", "https://github.com/wunnr/partydeck");
+            ui.hyperlink_to(" GitHub", "https://github.com/partydeck/partydeck");
             ui.label("contributors/handler creators:")
         });
         ui.horizontal_wrapped(|ui| {
@@ -44,12 +44,16 @@ impl PartyApp {
             ui.hyperlink_to("@cseelhoff", "https://github.com/cseelhoff");
             ui.hyperlink_to("@davidawesome-02", "https://github.com/davidawesome-02");
             ui.hyperlink_to("@felipecrs", "https://github.com/felipecrs");
+            ui.hyperlink_to("@flipfloppy1", "https://github.com/flipfloppy1");
             ui.hyperlink_to("@framilano", "https://github.com/framilano");
             ui.hyperlink_to("@FrancisBernard34", "https://github.com/FrancisBernard34");
+            ui.hyperlink_to("@jackhric", "https://github.com/jackhric");
             ui.hyperlink_to("@JackTYM", "https://github.com/JackTYM");
             ui.hyperlink_to("@Rudicito", "https://github.com/Rudicito");
             ui.hyperlink_to("@Tau5", "https://github.com/Tau5");
+            ui.hyperlink_to("@turdferguson5000", "https://github.com/turdferguson5000");
             ui.hyperlink_to("@Twig6943", "https://github.com/Twig6943");
+            ui.hyperlink_to("@Xyphyn", "https://github.com/Xyphyn");
         });
     }
 
@@ -138,7 +142,7 @@ impl PartyApp {
         };
 
         let header = match h.is_saved_handler() {
-            false => "Add Game",
+            false => "Add Game Wizard",
             true => &format!("Edit Handler: {}", h.display()),
         };
 
@@ -184,6 +188,8 @@ impl PartyApp {
             })
             .unwrap_or(0);
 
+        ui.label(egui::RichText::new("Game info (Required)").strong());
+        
         ui.horizontal(|ui| {
             ui.label("Steam App:");
             egui::ComboBox::from_id_salt("appid")
@@ -210,8 +216,10 @@ impl PartyApp {
 
         if h.steam_appid == None {
             ui.horizontal(|ui| {
-                ui.label("Game root folder:");
-                ui.add_enabled(false, egui::TextEdit::singleline(&mut h.path_gameroot));
+                ui.label("(non-Steam) Game root folder:");
+                if !h.path_gameroot.is_empty() {
+                    ui.add_enabled(false, egui::TextEdit::singleline(&mut h.path_gameroot));
+                }
                 if ui.button("🗁").clicked() {
                     if let Ok(path) = dir_dialog() {
                         h.path_gameroot = path.to_string_lossy().to_string();
@@ -221,8 +229,10 @@ impl PartyApp {
         }
 
         ui.horizontal(|ui| {
-            ui.label("Executable:");
-            ui.add_enabled(false, egui::TextEdit::singleline(&mut h.exec));
+            ui.label("Executable file:");
+            if !h.exec.is_empty() {
+                ui.add_enabled(false, egui::TextEdit::singleline(&mut h.exec));
+            }
             if ui.button("🗁").clicked() {
                 if let Ok(base_path) = h.get_game_rootpath()
                     && let Ok(path) = file_dialog_relative(&PathBuf::from(base_path))
@@ -232,6 +242,10 @@ impl PartyApp {
             }
         });
 
+        ui.separator();
+        
+        ui.label(egui::RichText::new("Properties").strong());
+         
         ui.horizontal(|ui| {    
             ui.label("Prelaunch:");
             ui.add(egui::TextEdit::multiline(&mut h.prelaunch).desired_rows(1));
@@ -265,7 +279,7 @@ impl PartyApp {
         }
 
         if h.win() {
-            ui.checkbox(&mut h.enable_hidraw, "Enable HIDraw for non-Xbox controllers (fixes Unity Input System games; may cause double input in non-Unity games!)");
+            ui.checkbox(&mut h.ps_xinput, "PS Controllers mimic Xbox (XInput)");
         }
 
         if !h.win() {
@@ -388,12 +402,7 @@ impl PartyApp {
 
         ui.horizontal(|ui| {
             ui.add(
-                egui::Image::new(egui::include_image!("../../res/BTN_SOUTH.png")).max_height(12.0),
-            );
-            ui.label("[Z]");
-            ui.add(
-                egui::Image::new(egui::include_image!("../../res/MOUSE_RIGHT.png"))
-                    .max_height(12.0),
+                egui::Image::new(egui::include_image!("../../res/BTN_NEWINSTANCE.png")).max_height(16.0),
             );
             let add_text = match self.instance_add_dev {
                 None => "Add New Instance",
@@ -401,42 +410,30 @@ impl PartyApp {
             };
             ui.label(add_text);
 
-            ui.add(egui::Separator::default().vertical());
+            ui.add_space(20.0);
 
             ui.add(
-                egui::Image::new(egui::include_image!("../../res/BTN_EAST.png")).max_height(12.0),
+                egui::Image::new(egui::include_image!("../../res/BTN_DELINSTANCE.png")).max_height(16.0),
             );
-            ui.label("[X]");
             let remove_text = match self.instance_add_dev {
                 None => "Remove",
                 Some(_) => "Cancel",
             };
             ui.label(remove_text);
-
-            ui.add(egui::Separator::default().vertical());
         });
         
         ui.horizontal(|ui| {
             ui.add(
-                egui::Image::new(egui::include_image!("../../res/DPAD_LEFT.png")).max_height(12.0),
+                egui::Image::new(egui::include_image!("../../res/DPAD_LEFTRIGHT.png")).max_height(16.0),
             );
-            ui.add(
-                egui::Image::new(egui::include_image!("../../res/DPAD_RIGHT.png")).max_height(12.0),
-            );
-            ui.label("Change Instance Profile");
+            ui.label("Switch Profile");
             if self.options.gamescope_sdl_backend {
-                ui.add(egui::Separator::default().vertical());
+                ui.add_space(20.0);
                 ui.add(
-                    egui::Image::new(egui::include_image!("../../res/DPAD_UP.png")).max_height(12.0),
+                    egui::Image::new(egui::include_image!("../../res/DPAD_UPDOWN.png")).max_height(16.0),
                 );
-                ui.add(
-                    egui::Image::new(egui::include_image!("../../res/DPAD_DOWN.png"))
-                        .max_height(12.0),
-                );
-                ui.label("Change Instance Monitor");
+                ui.label("Switch Monitor");
             }
-
-            ui.add(egui::Separator::default().vertical());
         });
 
         ui.separator();
@@ -466,7 +463,7 @@ impl PartyApp {
 
                 if self.instance_add_dev == None {
                     let invitebtn = ui.add(
-                        egui::Button::image_and_text(egui::include_image!("../../res/BTN_NORTH.png"), "[A] Invite New Device")
+                        egui::Button::image_and_text(egui::include_image!("../../res/BTN_INVITE.png"), "Invite New Device")
                     );
                     if invitebtn.clicked() {
                         self.instance_add_dev = Some(i);
@@ -520,17 +517,20 @@ impl PartyApp {
     }
 
     pub fn display_settings_general(&mut self, ui: &mut Ui) {
-        let check_for_app_updates = ui.checkbox(&mut self.options.check_for_updates, "Check for partydeck updates");
+        let check_for_app_updates = ui.checkbox(&mut self.options.check_for_updates, "Check for updates");
         if check_for_app_updates.hovered() {
-            self.infotext = "DEFAULT: Enabled\n\nWARNING: CONTACTS GITHUB's SERVERS ON EVERY LAUNCH\nMakes partydeck check online for updates durring each launch, and notfies user when avaliable.".to_string();
+            self.infotext = "DEFAULT: Enabled\nWARNING: CONTACTS GITHUB'S SERVERS ON EVERY LAUNCH\n\nMakes partydeck check online for updates durring each launch, and notfies the user when a new version is available.".to_string();
         }
 
-        let enable_kwin_script_check = ui.checkbox(
-            &mut self.options.enable_kwin_script,
-            "(KDE) Automatically resize/reposition instances using KWin script",
-        );
-        if enable_kwin_script_check.hovered() {
-            self.infotext = "DEFAULT: Enabled\n\n Resizes/repositions instances to fit the screen using a KWin script. If using a desktop environment or window manager other than KDE Plasma, uncheck this; note that you will need to manually resize and reposition the windows.".to_string();
+        if self.running_in_plasma {
+            let enable_kwin_script_check = ui.checkbox(
+                &mut self.options.enable_kwin_script,
+                "(KDE) Resize instances to fit the screen",
+            );
+
+            if enable_kwin_script_check.hovered() {
+                self.infotext = "DEFAULT: Enabled\n\nResizes/repositions instances to fit the screen using a KWin script. If using a desktop environment or window manager other than KDE Plasma, uncheck this; note that you will need to manually resize and reposition the windows.".to_string();
+            }
         }
 
         ui.horizontal(|ui| {

@@ -33,6 +33,7 @@ pub enum SettingsPage {
 pub struct PartyApp {
     pub installed_steamapps: Vec<Option<steamlocate::App>>,
     pub needs_update: Arc<AtomicBool>,
+    pub running_in_plasma: bool,
     pub options: PartyConfig,
     pub cur_page: MenuPage,
     pub settings_page: SettingsPage,
@@ -49,7 +50,8 @@ pub struct PartyApp {
     pub handler_edit: Option<Handler>,
     pub handler_lite: Option<Handler>,
 
-    pub loading_msg: Option<String>,
+    pub loading_msg: Option<String>, // Base message + elapsed time appended if needed
+    pub loading_base_msg: Option<String>, // The message a task started with
     pub loading_since: Option<std::time::Instant>,
     #[allow(dead_code)]
     pub task: Option<std::thread::JoinHandle<()>>,
@@ -77,6 +79,9 @@ impl PartyApp {
         let mut app = Self {
             installed_steamapps: get_installed_steamapps(),
             needs_update: Arc::new(AtomicBool::new(false)),
+            running_in_plasma: std::env::var("XDG_CURRENT_DESKTOP")
+                .map(|d| d == "KDE")
+                .unwrap_or(false),
             options,
             cur_page,
             settings_page: SettingsPage::General,
@@ -91,9 +96,22 @@ impl PartyApp {
             handler_lite,
             profiles: scan_profiles(false),
             loading_msg: None,
+            loading_base_msg: None,
             loading_since: None,
             task: None,
         };
+
+        // SteamOS gaming mode nested kwin will have XDG_CURRENT_DESKTOP=gamescope
+        // but HOMETEST_DESKTOP_SESSION=plasma
+        if std::env::var("HOMETEST_DESKTOP_SESSION")
+            .map(|d| d == "plasma")
+            .unwrap_or(false) {
+            app.running_in_plasma = true;
+        }
+
+        if !app.running_in_plasma {
+            app.options.enable_kwin_script = false;
+        }
 
         if app.options.check_for_updates {
             let needs_update = app.needs_update.clone();
@@ -172,14 +190,18 @@ impl eframe::App for PartyApp {
                 let _ = handle.join();
                 self.loading_since = None;
                 self.loading_msg = None;
+                self.loading_base_msg = None;
             } else {
                 self.task = Some(handle);
             }
         }
         if let Some(start) = self.loading_since {
-            if start.elapsed() > std::time::Duration::from_secs(60) {
-                // Give up waiting after one minute
-                self.loading_msg = Some("Operation timed out".to_string());
+            // Display how long the task has been running for
+            let secs = start.elapsed().as_secs();
+            if secs > 20 {
+                if let Some(base) = &self.loading_base_msg {
+                    self.loading_msg = Some(format!("{base} ({secs}s)"));
+                }
             }
         }
         if let Some(msg) = &self.loading_msg {
@@ -212,6 +234,7 @@ impl PartyApp {
         F: FnOnce() + Send + 'static,
     {
         self.loading_msg = Some(msg.to_string());
+        self.loading_base_msg = Some(msg.to_string());
         self.loading_since = Some(std::time::Instant::now());
         self.task = Some(std::thread::spawn(f));
     }

@@ -24,6 +24,16 @@ fn js_siblings(evdev_path: &str) -> Vec<String> {
         .collect()
 }
 
+/// First bwrap in PATH that isn't inside the AppImage, if present.
+fn host_bwrap() -> Option<PathBuf> {
+    // $APPDIR from within AppImage, None otherwise.
+    let appdir: Option<PathBuf> = std::env::var_os("APPDIR").map(PathBuf::from);
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .filter(|d| appdir.as_ref().is_none_or(|a| !d.starts_with(a)))
+        .map(|d| d.join("bwrap"))
+        .find(|p| p.is_file())
+}
+
 pub fn setup_profiles(
     h: &Handler,
     instances: &Vec<Instance>,
@@ -224,9 +234,8 @@ pub fn launch_cmds(
 
         cmd.current_dir(cwd);
 
-        if !win || !h.enable_hidraw {
-            cmd.env("SDL_JOYSTICK_HIDAPI", "0");
-        }
+        cmd.env("SDL_VIDEODRIVER", "x11");
+        cmd.env("SDL_JOYSTICK_HIDAPI", "0");
         cmd.env("ENABLE_GAMESCOPE_WSI", "0");
         if h.sdl2_override != SDL2Override::No {
             let path_sdl = match h.sdl2_override {
@@ -247,10 +256,9 @@ pub fn launch_cmds(
             cmd.env("WINEPREFIX", &path_pfx);
             cmd.env("PROTON_VERB", "run");
             cmd.env("PROTONPATH", protonpath);
-            if h.enable_hidraw {
-                cmd.env("PROTON_ENABLE_HIDRAW", "1");
-            } else {
-                cmd.env("PROTON_DISABLE_HIDRAW", "1");
+            cmd.env("PROTON_ENABLE_HIDRAW", "1");
+            if h.ps_xinput {
+                cmd.env("PROTON_SONY_HIDRAW_XINPUT", "1");
             }
             if cfg.proton_wow64 {
                 cmd.env("PROTON_USE_WOW64", "1");
@@ -317,11 +325,28 @@ pub fn launch_cmds(
         }
         cmd.arg("--");
 
+        // The AppImage's bundled bwrap is a wrapper that un-isolates /tmp by re-binding the host /tmp
+        // so we need to explicitly use the host's bwrap when there is one.
+        let is_appimage = std::env::var("APPIMAGE").is_ok();
+        let (bwrap, appdir) = if !is_appimage {
+            (PathBuf::from("bwrap"), None)
+        } else if let Some(host) = host_bwrap() {
+            (host, std::env::var_os("APPDIR"))
+        } else {
+            println!("[partydeck] WARNING: no bwrap found in host PATH; instances will share /tmp");
+            (PathBuf::from("bwrap"), None)
+        };
+
         // Bwrap args
-        cmd.arg("bwrap");
+        cmd.arg(&bwrap);
         cmd.arg("--die-with-parent");
         cmd.args(["--dev-bind", "/", "/"]);
         cmd.args(["--tmpfs", "/tmp"]);
+
+        // Bind AppImage mount from /tmp to keep it visible for bundled binaries like umu-run
+        if let Some(appdir) = &appdir {
+            cmd.arg("--bind").args([appdir, appdir]);
+        }
 
         // Only expose this instance to the input devices specifically associated with it
         cmd.args(["--tmpfs", "/dev/input"]);
@@ -329,6 +354,10 @@ pub fn launch_cmds(
             if !dev.enabled
                 || (!instance.devices.contains(&d) && dev.device_type == DeviceType::Gamepad)
             {
+                // hidraw is not under /dev/input, so it still has to be masked rather than omitted.
+                for hp in &dev.hidraw_paths {
+                    cmd.args(["--bind", "/dev/null", hp]);
+                }
                 continue;
             }
             if Path::new(&dev.path).exists() {
@@ -337,21 +366,6 @@ pub fn launch_cmds(
             // Also expose the device's js sibling for games that use the legacy Joystick API
             for js in js_siblings(&dev.path) {
                 cmd.args(["--dev-bind", &js, &js]);
-            }
-        }
-        
-        // hidraw is not under /dev/input, so it still has to be masked rather than omitted.
-        // Wine's winebus reads controllers through it when hidraw is exposed, and leaving it
-        // open leaks input to every instance.
-        if h.enable_hidraw {
-            for (d, dev) in input_devices.iter().enumerate() {
-                if !dev.enabled
-                    || (!instance.devices.contains(&d) && dev.device_type == DeviceType::Gamepad)
-                {
-                    for hp in &dev.hidraw_paths {
-                        cmd.args(["--bind", "/dev/null", hp]);
-                    }
-                }
             }
         }
 
@@ -387,7 +401,6 @@ pub fn launch_cmds(
             }
         }
 
-        let is_appimage = std::env::var("APPIMAGE").is_ok();
         if is_appimage {
             // Because we are faking temp directory, this makes the system use the real vulkan directory for games
             // Used here because the env var is set durring bwrap and gamescope process starting so env cant be cleared at this stage.
@@ -404,6 +417,7 @@ pub fn launch_cmds(
             if let Some(appid) = h.steam_appid {
                 cmd.env("SteamAppId", &appid.to_string());
                 cmd.env("SteamGameId", &appid.to_string());
+                cmd.env("SteamOverlayGameId", &appid.to_string());
             }
 
             let sdk32_link = std::fs::read_link(PATH_STEAM.join("sdk32")).map_err(|e| format!("Failed to read sdk32 link: {}", e))?;
@@ -420,6 +434,7 @@ pub fn launch_cmds(
             ]);
 
             if win {
+                cmd.env("UMU_USE_STEAM", "1");
                 cmd.arg("--bind").args([
                     PATH_RES.join("goldberg/win"),
                     path_pfx.join("drive_c/Program Files (x86)/Steam"),
@@ -472,6 +487,34 @@ pub fn launch_cmds(
 
 
         cmd.arg(&path_exec);
+
+        if prelaunch_exists {
+            let prelaunch_cmd = &mut prelaunch_cmds[i];
+
+            prelaunch_cmd.current_dir(&h.path_handler);
+
+            prelaunch_cmd.env("PROFILE", &instance.profname);
+            prelaunch_cmd.env("WIDTH", instance.width.to_string());
+            prelaunch_cmd.env("HEIGHT", instance.height.to_string());
+            prelaunch_cmd.env("RESOLUTION", format!("{}x{}", instance.width, instance.height));
+            prelaunch_cmd.env("INSTANCECOUNT", instances.len().to_string());
+            prelaunch_cmd.env("INSTANCENUM", i.to_string());
+            prelaunch_cmd.env("GAMEDIR", &gamedir);
+            prelaunch_cmd.env("HANDLERDIR", &h.path_handler);
+
+            if h.use_goldberg {
+                prelaunch_cmd.env("GseAppPath", PATH_PARTY.join("goldberg_data"));
+                prelaunch_cmd.env("GseSavePath", path_prof.join("steam"));
+                prelaunch_cmd.env("SteamAppUser", instance.profname.clone());
+                prelaunch_cmd.env("SteamUser", instance.profname.clone());
+                prelaunch_cmd.env("SteamClientLaunch", "1");
+                prelaunch_cmd.env("SteamEnv", "1");
+                if let Some(appid) = h.steam_appid {
+                    prelaunch_cmd.env("SteamAppId", &appid.to_string());
+                    prelaunch_cmd.env("SteamGameId", &appid.to_string());
+                }
+            }
+        }
 
         for arg in h.args.split_whitespace() {
             let processed_arg = match arg {
