@@ -103,6 +103,23 @@ pub fn launch_game(
 
     let mut i = 0;
     for mut cmd in new_cmds {
+        let cmd_file = PATH_PARTY.join("tmp").join(format!("game-{}", i)).join(".launch_command");
+
+        let cmd_original = cmd_to_str(&cmd);
+        let cmd_override = std::fs::read_to_string(&cmd_file)?;
+
+        if cmd_override != cmd_original {
+            let parts = shell_words::split(&cmd_override)
+                .map_err(|e| format!("Invalid command override: {}", e))?;
+
+            let (program, args) = parts
+                .split_first()
+                .ok_or("Command override is empty")?;
+
+            cmd = Command::new(program);
+            cmd.args(args);
+        }
+
         print_cmd_exec(&cmd);
 
         let handle = cmd.spawn().map_err(|e| {
@@ -513,9 +530,54 @@ pub fn launch_cmds(
             };
             cmd.arg(processed_arg);
         }
+
+        let cmd_file = gamedir.join(".launch_command");
+
+        let cmd_line = cmd_to_str(&cmd);
+        std::fs::write(&cmd_file, cmd_line)?;
+
+        if prelaunch_exists {
+            let prelaunch_cmd = &mut prelaunch_cmds[i];
+
+            prelaunch_cmd.current_dir(&h.path_handler);
+
+            prelaunch_cmd.env("PROFILE", &instance.profname);
+            prelaunch_cmd.env("WIDTH", instance.width.to_string());
+            prelaunch_cmd.env("HEIGHT", instance.height.to_string());
+            prelaunch_cmd.env("RESOLUTION", format!("{}x{}", instance.width, instance.height));
+            prelaunch_cmd.env("INSTANCECOUNT", instances.len().to_string());
+            prelaunch_cmd.env("INSTANCENUM", i.to_string());
+            prelaunch_cmd.env("GAMEDIR", &gamedir);
+            prelaunch_cmd.env("HANDLERDIR", &h.path_handler);
+            prelaunch_cmd.env("LAUNCH_CMD_PATH", &cmd_file);
+
+            if h.use_goldberg {
+                prelaunch_cmd.env("GseAppPath", PATH_PARTY.join("goldberg_data"));
+                prelaunch_cmd.env("GseSavePath", path_prof.join("steam"));
+                prelaunch_cmd.env("SteamAppUser", instance.profname.clone());
+                prelaunch_cmd.env("SteamUser", instance.profname.clone());
+                prelaunch_cmd.env("SteamClientLaunch", "1");
+                prelaunch_cmd.env("SteamEnv", "1");
+                if let Some(appid) = h.steam_appid {
+                    prelaunch_cmd.env("SteamAppId", &appid.to_string());
+                    prelaunch_cmd.env("SteamGameId", &appid.to_string());
+                }
+            }
+        }
     }
 
     Ok((prelaunch_cmds, cmds))
+}
+
+fn cmd_to_str(cmd: &Command) -> String {
+    let mut cmd_line = shell_words::quote(&cmd.get_program().to_string_lossy()).into_owned();
+
+    for arg in cmd.get_args() {
+        cmd_line.push(' ');
+        cmd_line.push_str(&shell_words::quote(&arg.to_string_lossy()));
+    }
+
+    cmd_line
 }
 
 fn print_cmd_exec(cmd: &Command) {

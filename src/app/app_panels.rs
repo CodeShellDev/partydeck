@@ -128,6 +128,9 @@ impl PartyApp {
                     }
                     self.handlers = scan_handlers();
                 }
+                if ui.button("🔄").clicked() {
+                    self.handlers = scan_handlers();
+                }
             });
         });
         ui.separator();
